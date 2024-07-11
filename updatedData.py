@@ -15,7 +15,7 @@ from variables import table
 def getIds(branch,endpoint,dateEncoded,item):
     # Gathers the necessary api keys and secret data needed to create connections from data sources/destinations.
     secret = {
-        "odbcString" : <SQL Database Connection String>,        
+        "odbcString" : "SQL Database Connection String",        
         "authenticationToken" : branch["authenticationToken"],
         "authenticationKey" : branch["authenticationKey"],
         "officeID" : branch["officeID"]
