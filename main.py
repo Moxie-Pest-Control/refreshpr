@@ -5,7 +5,6 @@ import urllib.parse
 from datetime import datetime, timedelta
 from multiprocessing import Process
 
-import azure.functions as func
 import pandas
 import pyodbc
 import requests
@@ -24,7 +23,7 @@ def main():
     date2 = datetime.strftime(datetime.now(),'%Y-%m-%d %H:%M:%S')
     date = datetime.strptime(str(date),'%Y-%m-%d %H:%M:%S') - relativedelta(days=2)
     date2 = datetime.strptime(str(date2),'%Y-%m-%d %H:%M:%S') 
-    
+
     endpoints = ["Contract","Appointment","AppointmentReminder","Document","Customer","Employee","Office","Payment","ServiceType","Subscription","Lead","Ticket","Form","Note","GenericFlag","GenericFlagAssignment","PaymentProfile","Product","Region","Review","Route","Task","PaymentApplication","Team","Knock","Chemical","ChemicalUse","Diagram","Disbursement","DisbursementItem","Group","Insect","Spot","Changelog"]
 
     kvBranches = {     

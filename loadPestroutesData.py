@@ -7,12 +7,10 @@ import time
 import urllib.parse
 from datetime import datetime, timedelta
 
-import azure.functions as func
 import pyodbc
 import requests
 
 from variables import table
-
 
 def getIds(branch,endpoint,dateEncoded,item):
     # Gathers the necessary api keys and secret data needed to create connections from data sources/destinations.

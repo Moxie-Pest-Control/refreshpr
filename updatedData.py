@@ -6,7 +6,6 @@ import time
 import urllib.parse
 from datetime import datetime, timedelta
 
-import azure.functions as func
 import pyodbc
 import requests
 
