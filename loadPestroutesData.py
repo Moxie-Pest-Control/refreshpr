@@ -52,56 +52,17 @@ def getIds(branch,endpoint,dateEncoded,item):
         url = idUrl.format(secret["officeID"],secret["authenticationToken"],secret["authenticationKey"])
 
 
-    finalList = []
-    results = [0]   
-    maxValue = 0
-    while len(results) > 0:         
-        data = {    
-            '{}'.format(endpoint['queryPlural']): '{"operator":">","value": ' + str(maxValue) + '}' ##Method 2. Uncomment everything that's commented and then comment this to swap
-        }     
-        headers = {
-        'Content-Type': 'application/json',
-        }
-        # url = "https://moxie{}.pestroutes.com/api/{}/search?authenticationToken={}&authenticationKey={}".format(officeID,tableName,aToken,aKey)
-        response = requests.get(url,headers=headers,json=data)
-        # print(url)
-        
-        if response.status_code != 200:
-            response = requests.get(url,headers=headers,json=data)
-            response = response.json()
-        else:
-            response = response.json()
-        results = response["{}".format(endpoint['queryPlural'])] 
-        # print('Result Length: '+str(len(results)))    
-        finalList += results
-        
-        if len(finalList) < 1:
-            print('No {} records for office {}'.format(endpoint['urlEndpoint'],secret['officeID']))
-            return
-        
-        # print(endpoint['urlEndpoint'])
-        
-        maxValue = finalList[-1]
-
-    total = len(finalList)
+    pestroutesData = requests.get(url)
+    data = pestroutesData.json()
+    # Checks if the request was successful
+    if data["success"] != True:
+        logging.info(data["errorMessage"])
+        return data
+    ids = data[endpoint["queryPlural"]]
     
-    print('Total count of IDs: '.format(str(total)))
+    logging.info('Total count of IDs: '.format(str(ids)))
     
-    iterateIds(finalList,secret,endpoint,item)
-
-    # Variables that contain the response from the post request. This initial request only gathers the ID numbers of the rows from the search request.
-    # pestroutesData = requests.get(url)
-    # data = pestroutesData.json()
-    # # Checks if the request was successful
-    # if data["success"] != True:
-    #     print(data["errorMessage"])
-    #     return data
-    # ids = data[endpoint["queryPlural"]]
-    # # Sends the ID's to another function which will go through the list of ID's by 1000 each time.
-    # iterateIds(ids,secret,endpoint)
-    
-    # ids = searchLoop(idUrl,endpoint['sqlTable'],endpoint['queryPlural'],secret['officeID'],secret["authenticationToken"],secret["authenticationKey"])
-    # iterateIds(ids,secret,endpoint)
+    iterateIds(ids,secret,endpoint,item)
 
 def iterateIds(ids,secret,endpoint,item):
     # Logs the total of ID's to load for a specific class and branch
