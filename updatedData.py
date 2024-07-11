@@ -16,7 +16,7 @@ from variables import table
 def getIds(branch,endpoint,dateEncoded,item):
     # Gathers the necessary api keys and secret data needed to create connections from data sources/destinations.
     secret = {
-        "odbcString" : "Driver={ODBC Driver 17 for SQL Server};Server=tcp:moxiereportingserver.database.windows.net,1433;Database=PestroutesDB;Encrypt=yes;Uid=powerbiadmin;Pwd=KJXiET15TuDp;TrustServerCertificate=no;Connection Timeout=30;",        
+        "odbcString" : <SQL Database Connection String>,        
         "authenticationToken" : branch["authenticationToken"],
         "authenticationKey" : branch["authenticationKey"],
         "officeID" : branch["officeID"]
