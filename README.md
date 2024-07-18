@@ -1,5 +1,6 @@
 Prerequisites
--Have python installed
+- Have python installed
+- Install the python packages in the requirements.txt file
 
 For Windows, run the .bat file
 
