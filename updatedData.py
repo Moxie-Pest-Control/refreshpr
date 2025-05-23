@@ -5,6 +5,7 @@ import tempfile
 import time
 import urllib.parse
 from datetime import datetime, timedelta
+import pytz  # Add this import for timezone handling
 
 import pyodbc
 import requests
@@ -12,57 +13,128 @@ import requests
 from variables import table
 
 
+def convert_pacific_to_branch_timezone(datetime_str, branch_timezone):
+    """
+    Convert datetime from Pacific timezone to branch-specific timezone
+    
+    Args:
+        datetime_str: String datetime in format "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS"
+        branch_timezone: Target timezone string (e.g., "America/New_York")
+    
+    Returns:
+        Converted datetime string in the same format as input
+    """
+    if not datetime_str or datetime_str in [None, '0000-00-00', '0000-00-00 00:00:00', 'None']:
+        return datetime_str
+    
+    try:
+        # Define Pacific timezone
+        pacific_tz = pytz.timezone('America/Los_Angeles')
+        
+        # Define target timezone
+        target_tz = pytz.timezone(branch_timezone)
+        
+        # Parse the datetime string
+        if len(datetime_str) == 10:  # Date only: "YYYY-MM-DD"
+            dt = datetime.strptime(datetime_str, "%Y-%m-%d")
+            # For date-only, assume midnight Pacific time
+            dt_pacific = pacific_tz.localize(dt)
+            dt_target = dt_pacific.astimezone(target_tz)
+            return dt_target.strftime("%Y-%m-%d")
+        elif len(datetime_str) == 19:  # Datetime: "YYYY-MM-DD HH:MM:SS"
+            dt = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
+            # Localize to Pacific timezone
+            dt_pacific = pacific_tz.localize(dt)
+            # Convert to target timezone
+            dt_target = dt_pacific.astimezone(target_tz)
+            return dt_target.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            # If format is unexpected, return original
+            return datetime_str
+            
+    except Exception as e:
+        print(f"Error converting timezone for {datetime_str}: {e}")
+        return datetime_str
+
+
 def getIds(branch,endpoint,dateEncoded,item):
     # Gathers the necessary api keys and secret data needed to create connections from data sources/destinations.
     secret = {
-        "odbcString" : "SQL Database Connection String",        
+        "odbcString" : "Driver={ODBC Driver 18 for SQL Server};Server=tcp:moxiereportingserver.database.windows.net,1433;Database=StagingDB;Encrypt=yes;Uid=powerbiadmin;Pwd=KJXiET15TuDp;TrustServerCertificate=no;Connection Timeout=30;",        
         "authenticationToken" : branch["authenticationToken"],
         "authenticationKey" : branch["authenticationKey"],
-        "officeID" : branch["officeID"]
+        "officeID" : branch["officeID"],
+        "timeZone" : branch.get("timeZone", "America/Los_Angeles")  # Add timezone to secret, default to Pacific
     }
     if 'dateUpdate' in endpoint:
         idUrl = endpoint["dateUpdate"]
     else: 
+        print("No dateUpdate endpoint found")
         return
-    statusEncoded = urllib.parse.quote('{"operator":"IN","value":["-3","-2","-1","0","1","2"]}')
-    # Checks which class the function is currently loading. Certain classes require statuses to be specified in order for the post request to gather all data from the endpoint.
-    if endpoint["dateBool"] is True:
-        if item == "Appointment":
-            url = idUrl.format(secret["officeID"],secret["authenticationToken"],secret["authenticationKey"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["-2","-1","0","1","2"]}'))
-        elif item == "Payment":
-            url = idUrl.format(secret["officeID"],secret["authenticationToken"],secret["authenticationKey"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["0","1","2"]}'))
-        elif item == "Ticket":
-            url = idUrl.format(secret["officeID"],secret["authenticationToken"],secret["authenticationKey"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["0","1"]}'))
-        elif item == "Subscription":
-            url = idUrl.format(secret["officeID"],secret["authenticationToken"],secret["authenticationKey"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["0","1"]}'))
-        elif item == "Lead":
-            url = idUrl.format(secret["officeID"],secret["authenticationToken"],secret["authenticationKey"],dateEncoded,'&active={"operator":"IN", "value":[-3]}')
-        elif item == "Customer":
-            url = idUrl.format(secret["officeID"],secret["authenticationToken"],secret["authenticationKey"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["0","1"]}'))
-        elif item == "Door":
-            url = idUrl.format(secret["officeID"],secret["authenticationToken"],secret["authenticationKey"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["-2","-1","0","1","2"]}'))
-        elif item == "ServicePlan":
-            url = idUrl.format(secret["officeID"],secret["authenticationToken"],secret["authenticationKey"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["-2","-1","0","1","2"]}'))
-        elif item == "Task":
-            url = idUrl.format(secret["officeID"],secret["authenticationToken"],secret["authenticationKey"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["0","1","2","3"]}'),urllib.parse.quote('{"operator":"IN","value":["0","1"]}'))
+
+    finalList = []
+    results = [0]   
+    maxValue = 0
+    while len(results) > 0:         
+        data = {    
+            '{}'.format(endpoint['queryPlural']): '{"operator":">","value": ' + str(maxValue) + '}' 
+        }     
+        headers = {
+        'Content-Type': 'application/json',
+        }
+        
+        # Creates the url for extracting the bulk data of the ID's sent from the previous function
+        statusEncoded = urllib.parse.quote('{"operator":"IN","value":["-3","-2","-1","0","1","2"]}')
+        # Checks which class the function is currently loading. Certain classes require statuses to be specified in order for the post request to gather all data from the endpoint.
+        if endpoint["dateBool"] is True:
+            if item == "Appointment":
+                url = idUrl.format(secret["officeID"],secret["authenticationKey"],secret["authenticationToken"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["-2","-1","0","1","2"]}'))
+            elif item == "Payment":
+                url = idUrl.format(secret["officeID"],secret["authenticationKey"],secret["authenticationToken"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["0","1","2"]}'))
+            elif item == "Ticket":
+                url = idUrl.format(secret["officeID"],secret["authenticationKey"],secret["authenticationToken"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["0","1"]}'))
+            elif item == "Subscription":
+                url = idUrl.format(secret["officeID"],secret["authenticationKey"],secret["authenticationToken"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["0","1"]}'))
+            elif item == "Lead":
+                url = idUrl.format(secret["officeID"],secret["authenticationKey"],secret["authenticationToken"],dateEncoded,'&active={"operator":"IN", "value":[-3]}')
+            elif item == "Customer":
+                url = idUrl.format(secret["officeID"],secret["authenticationKey"],secret["authenticationToken"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["0","1"]}'))
+            elif item == "Door":
+                url = idUrl.format(secret["officeID"],secret["authenticationKey"],secret["authenticationToken"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["-2","-1","0","1","2"]}'))
+            elif item == "ServicePlan":
+                url = idUrl.format(secret["officeID"],secret["authenticationKey"],secret["authenticationToken"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["-2","-1","0","1","2"]}'))
+            elif item == "Task":
+                url = idUrl.format(secret["officeID"],secret["authenticationKey"],secret["authenticationToken"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["0","1","2","3"]}'),urllib.parse.quote('{"operator":"IN","value":["0","1"]}'))
+            else:
+                url = idUrl.format(secret["officeID"],secret["authenticationKey"],secret["authenticationToken"],dateEncoded)
+        elif item == "Employee":
+            url = idUrl.format(secret["officeID"],secret["authenticationKey"],secret["authenticationToken"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["0","1"]}'))    
         else:
-            url = idUrl.format(secret["officeID"],secret["authenticationToken"],secret["authenticationKey"],dateEncoded)
-    elif item == "Employee":
-        url = idUrl.format(secret["officeID"],secret["authenticationToken"],secret["authenticationKey"],dateEncoded,urllib.parse.quote('{"operator":"IN","value":["0","1"]}'))    
-    else:
-        return
+            return
+        
+        response = requests.get(url,headers=headers,json=data)
+        
+        if response.status_code != 200:
+            response = requests.get(url,headers=headers,json=data)
+            response = response.json()
+        else:
+            response = response.json()
+            
+        results = response[endpoint['queryPlural']] 
+        if len(results) > 0:
+            logging.info('Result Length: '+str(len(results)))    
+        finalList += results
+        
+        if len(finalList) < 1:
+            logging.info('No {} records for office {}'.format(endpoint['urlEndpoint'],secret['officeID']))
+            return finalList
+        
+        
+        maxValue = finalList[-1]
+
+    total = len(finalList)
     
-    pestroutesData = requests.get(url)
-    data = pestroutesData.json()
-    # Checks if the request was successful
-    if data["success"] != True:
-        logging.info(data["errorMessage"])
-        return data
-    ids = data[endpoint["queryPlural"]]
-    
-    logging.info('Total count of IDs: '.format(str(ids)))
-    
-    iterateIds(ids,secret,endpoint,item)
+    iterateIds(finalList,secret,endpoint,item)
 
 
 def iterateIds(ids,secret,endpoint,item):
@@ -73,29 +145,25 @@ def iterateIds(ids,secret,endpoint,item):
 
     # While loop to iterate through the ID's by 1000 as it is the maximum amount you can bulk request from the api.
     while length > 1000:
-        # 
         processedIDs = ids[0:999]
         ids = ids[999:]
         # Sends the next 1000 ID's to another function for the bulk load request.
         data = getBulkData(processedIDs,secret,endpoint)
         # After getting the bulk data for the 1000 ID's, if the class is payment, it gets sent to another function to specifically transform some of that data to be suitable for the database.
         # Otherwise it is inserted into the database as the raw data.
-        # print(str(data))
         status = insertData(data,secret,endpoint,processedIDs)
         # Reset the total ID's to the total after subtracting the data that has just been loaded.
         length = len(ids)
     # Continutes the bulk loading of data after the total ID's left to request is less than 1000
     if length > 0:
         data = getBulkData(ids,secret,endpoint)
-        # print(str(data))
         status = insertData(data,secret,endpoint,ids)
 
 
 def getBulkData(ids,secret,endpoint):
     # Creates the url for extracting the bulk data of the ID's sent from the previous function
     bulkUrl = endpoint["bulkUrl"]
-    url = bulkUrl.format(secret["officeID"],secret["authenticationToken"],secret["authenticationKey"])
-    # print(url)
+    url = bulkUrl.format(secret["officeID"],secret["authenticationKey"],secret["authenticationToken"])
     payload = {
     endpoint["payloadKey"] : str(ids)
     }
@@ -120,7 +188,10 @@ def insertData(data,secret,endpoint,ids):
     cursor = sqlConnection.cursor()
     cursor.execute('SET QUOTED_IDENTIFIER OFF')
     dbColumns = []
-    columnQuery = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = N'{}'".format(endpoint['sqlTable'])
+    schemaTable = endpoint['sqlTable'].split('.')
+    schema = schemaTable[0]
+    table = schemaTable[1]
+    columnQuery = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{}' AND TABLE_SCHEMA = '{}'".format(table,schema)
     status = cursor.execute(columnQuery)
     for row in status:
         dbColumns.append(str(row[0]))
@@ -132,71 +203,45 @@ def insertData(data,secret,endpoint,ids):
         if column not in dbColumns:
             nonDBColumns.append(str(column))
             
-            with open('{}/newColumns.txt'.format(tempfile.gettempdir()), 'r') as f:
-                newColumns = f.read()
-            if column not in newColumns:
-                with open('{}/newColumns.txt'.format(tempfile.gettempdir()), 'a+') as f:
-                    f.write('Table: {} - Column: {} - Sample Data: {} \n'.format(endpoint['sqlTable'],column,data[0][column]))
+            data = [{k: v for k, v in d.items() if k != column} for d in data]
 
-                print('Tried to document new column to temp file: {}'.format(column))
+    # Get the branch timezone for conversion
+    branch_timezone = secret.get("timeZone", "America/Los_Angeles")
 
-                data = [{k: v for k, v in d.items() if k != column} for d in data]
-            else:
-                
-                data = [{k: v for k, v in d.items() if k != column} for d in data]
-    # nonDBColumns = list(set(dbColumns).difference(set(prColumns)))
-    # if len(nonDBColumns) > 0:
-    #     sendEmail(nonDBColumns,endpoint['sqlTable'],fp)
-
-    # if endpoint['sqlTable'] == 'Payment':
-    #     data = [{k: v for k, v in d.items() if k != 'transactionID'} for d in data]
-
-    # print(next(item for item in data if item["subscriptionID"] == '1937020'))
     for row in data:
         for key in row:
             if endpoint['sqlTable'] == 'Subscription':
                 if key == 'cancellationNotes' and len(row[key]) > 0:
                     reason = row[key]
                     reason = reason[0]
-                    # print(reason)
                     reason = reason['cancellationReason']
-                    # print(reason)
                     row[key] = reason
-            if "date" in key:
+            if "key" in ('batchClosed','batchOpened','checkIn','checkOut','created','date','dateAdded','dateApplied','dateCancelled','dateChanged','dateCompleted','dateCreated','dateSent','dateSigned','dateUpdated','deleted','dueDate','emailSent','invoiceDate','lastAttemptDate','lastLogin','lastUpdated','leadDateAdded','leadDateAssigned','leadUpdated','paymentHoldDate','responseTime','sentFailureDate','timeCreated','voiceSent'):
                 if row[key] == None or row[key] == '0000-00-00' or row[key] == '0000-00-00 00:00:00' or row[key] == 'None':
                     continue
 
                 try:
-                    if len(row[key]) == 10:
-                        checkDate = datetime.strptime(row[key], "%Y-%m-%d")
-                    elif len(row[key]) == 19:
-                        checkDate = datetime.strptime(row[key], "%Y-%m-%d %H:%M:%S")
-                    # print(row[key])
-                    # print("Date Valid")
+                    # Convert datetime from Pacific to branch timezone
+                    original_datetime = row[key]
+                    converted_datetime = convert_pacific_to_branch_timezone(original_datetime, branch_timezone)
+                    row[key] = converted_datetime
+                    
+                    # Validate the converted datetime
+                    if len(converted_datetime) == 10:
+                        checkDate = datetime.strptime(converted_datetime, "%Y-%m-%d")
+                    elif len(converted_datetime) == 19:
+                        checkDate = datetime.strptime(converted_datetime, "%Y-%m-%d %H:%M:%S")
                     
                 except Exception as e:
-                    print(e)
-                    print(row[key])
-                    print(key)
-                    print("Date Invalid")
+                    logging.info(f"Error processing datetime field {key}: {e}")
+                    logging.info(f"Original value: {row[key]}")
+                    logging.info("Setting to default date")
                     row[key] = "2000-01-01 00:00:00"
-            # elif endpoint['sqlTable'] == 'Payment':
-            #     if key == 'transactionID':
-        # if endpoint['sqlTable'] == 'Payment':
-        #     row['transactionIDNew'] = row.pop('transactionID')
 
+    data = list({i[endpoint['sqlPK']]:i for i in reversed(data)}.values())
 
-    try:
-        nestedList = [[key for key in data[0].keys()], *[list(idx.values()) for idx in data ]]
-    except:
-        nestedList = [[key for key in data[0].keys()], *[list(idx.values()) for idx in data ]]
-    # for el in nestedList:
-    #     if '1937020' in str(el):
-    #         print(el)
+    nestedList = [[key for key in data[0].keys()], *[list(idx.values()) for idx in data ]]
     status = mergeData(nestedList,endpoint,secret)
-    # status2 = mergeData2(nestedList,endpoint,secret)
-    if endpoint["sqlTable"] == "Customer":
-        insertCustomerFlag(data,secret,ids)
 
 def insertPaymentData(data,secret,endpoint):
 
@@ -208,13 +253,14 @@ def insertPaymentData(data,secret,endpoint):
     nestedList = [[key for key in data[0].keys()], *[list(idx.values()) for idx in data ]]
     
     status = mergeData(nestedList,endpoint,secret)
+
 def insertCustomerFlag(data,secret,ids):
     # If the class is customer, this will update the flag columns of that customer.
     # This gathers the customer flags of the customer ID's that was received
     endpoint = table.tables["CustomerFlag"]
     idsEncoded = urllib.parse.quote(str(ids))
     bulkUrl = endpoint["bulkUrl"]
-    url = bulkUrl.format(secret["officeID"],secret["authenticationToken"],secret["authenticationKey"])
+    url = bulkUrl.format(secret["officeID"],secret["authenticationKey"],secret["authenticationToken"])
     payload = {
     endpoint["payloadKey"] : str(ids)
     }
@@ -260,7 +306,6 @@ def insertCustomerFlag(data,secret,ids):
             initStatment = "UPDATE Customer SET salesmanAPay = 0, pendingCancellation = 0, switchOver = 0, prefersPaper = 0, purpleDragon = 0 where customerID = {}".format(id)
             cursor.execute(initStatment)
             insertStatement = "UPDATE Customer SET {} = '{}' WHERE customerID = '{}'".format(column,value,id)
-            # print(insertStatement)
             cursor.execute(insertStatement)
     # Commit and close connection
     sqlConnection.commit()
@@ -285,7 +330,6 @@ def executeStatement(statement,secret,data):
         print("Fail")
         return True
     
-################ WORKING VERSION ################################
 def mergeData(data,endpoint,secret):
     # Create sql connection
     sqlConnection = pyodbc.connect(secret["odbcString"])
@@ -294,35 +338,16 @@ def mergeData(data,endpoint,secret):
     nestedList = data
     columns = nestedList.pop(0)
     newNestedList = []
-    # if "parentID" in columns:
-    #     index1 = columns.index("parentID")
-    #     del columns[index1]
-    # if "templateType" in columns:
-    #     index2 = columns.index("templateType")
-    #     if index1 < index2:
-    #         del columns[index2 - 1]
-    #     else:
-    #         del columns[index2]
     
-    # print(nestedList)
     for listdata in nestedList:
         newList = []
         
-        # del listdata[index1]
-        # if index1 < index2:
-        #     del listdata[index2 - 1]
-        # else:
-        #     del listdata[index2]
         for element in listdata:
             if type(element) == str and len(element) > 0:
                 element = str(element)
-                if endpoint["sqlTable"] in ('Appointment','Subscription','Lead','Note','Task','Changelog','Review','Route','Customer','Insect','Diagram'):
+                if endpoint["sqlTable"] in ('PR.Appointment','PR.Subscription','PR.Lead','PR.Note','PR.Task','PR.Changelog','PR.Review','PR.Route','PR.Customer','PR.Insect','PR.Diagram'):
                     element = element.replace("'","''")
                 element = element.replace("\\","")
-                # element = element.replace('[','')
-                # element = element.replace(']','')
-                # element = element.replace('{','')
-                # element = element.replace('}','')
                 element = element.replace('\r','')
                 element = element.replace('\n','')
             elif element != None and (str(element) == "0000-00-00 00:00:00" or len(str(element)) < 1 or element == "0000-00-00" or element == "00:00:00"):
@@ -331,7 +356,7 @@ def mergeData(data,endpoint,secret):
                 if len(element) < 1:
                     element = None
                 element = str(element)
-                if endpoint["sqlTable"] in ('Appointment','Subscription','Lead','Note','Task','Changelog','Review','Route','Customer','Insect','Diagram'):
+                if endpoint["sqlTable"] in ('PR.Appointment','PR.Subscription','PR.Lead','PR.Note','PR.Task','PR.Changelog','PR.Review','PR.Route','PR.Customer','PR.Insect','PR.Diagram'):
                     element = element.replace("'","''")
                     element = element.replace("{''",'{"')
                     element = element.replace("''}",'"}')
@@ -346,7 +371,7 @@ def mergeData(data,endpoint,secret):
                 if 'items' in element:
                     del element['items']
                 element = str(element)
-                if endpoint["sqlTable"] in ('Appointment','Subscription','Lead','Note','Task','Changelog','Review','Route','Customer','Insect','Diagram'):
+                if endpoint["sqlTable"] in ('PR.Appointment','PR.Subscription','PR.Lead','PR.Note','PR.Task','PR.Changelog','PR.Review','PR.Route','PR.Customer','PR.Insect','PR.Diagram'):
                     element = element.replace("'","''")
                     element = element.replace("{''",'{"')
                     element = element.replace("''}",'"}')
@@ -361,7 +386,7 @@ def mergeData(data,endpoint,secret):
                 element = element
             else:
                 element = str(element)
-                if endpoint["sqlTable"] in ('Appointment','Subscription','Lead','Note','Task','Changelog','Review','Route','Customer','Insect','Diagram'):
+                if endpoint["sqlTable"] in ('PR.Appointment','PR.Subscription','PR.Lead','PR.Note','PR.Task','PR.Changelog','PR.Review','PR.Route','PR.Customer','PR.Insect','PR.Diagram'):
                     element = element.replace("'","''")
                 element = element.replace("\\","")
             newList.append(element)
@@ -375,12 +400,6 @@ def mergeData(data,endpoint,secret):
     dataString = dataString.replace(", '0000-00-00 00:00:00'", ", NULL")
     dataString = dataString.replace(", '00:00:00'", ", NULL")
     dataString = dataString.replace(", '0000-00-00'", ", NULL")
-    # dataString = dataString.replace(", [", ", '")
-    # dataString = dataString.replace("],", "',")
-    # dataString = dataString.replace("])", "')")
-    # dataString = dataString.replace("})", "}')")
-    # dataString = dataString.replace(", {", ", '{")
-    # dataString = dataString.replace("},", "}',")
     dataString = dataString.replace(", []", ", NULL")
     dataString = dataString.replace(", {}", ", NULL")
     primaryKey = endpoint['sqlPK']
@@ -417,7 +436,7 @@ def mergeData(data,endpoint,secret):
     sourceColumns = sourceColumns[:-1]
     sourceColumnsPre = sourceColumnsPre[:-1]
     targetColumns = targetColumns[:-1]
-    sample = '''MERGE INTO dbo.[{a}] AS tgt
+    sample = '''MERGE INTO [{a}] AS tgt
     USING (SELECT * FROM (VALUES {b}) AS s 
     ({c}) ) AS src 
     ON {d} 
@@ -437,17 +456,13 @@ def mergeData(data,endpoint,secret):
         f = targetColumns,
         g = sourceColumnsPre
     )
-    # print(sample)
-    # if str(1684285) in sample:
-    #     print("LETS GOOOOO")
-    # with open('query2.txt', 'w',encoding="utf-8") as f:
-    #     f.write(str(sample))
     success = False
     count = 0
-
+    
     while success != True:
         try:
-            status = cursor.execute(('''MERGE INTO dbo.[{a}] AS tgt
+            # print("Executing SQL Statement")
+            status = cursor.execute(('''MERGE INTO {a} AS tgt
                 USING (SELECT * FROM (VALUES {b}) AS s 
                 ({c}) ) AS src 
                 ON {d} 
@@ -502,13 +517,12 @@ def createConnection(secret):
 
 
 def searchLoop(tableName, primaryKey, officeID, aToken, aKey): 
-    #finalList = [-1]   
     finalList = []
     results = [0]   
     maxValue = 0
     while len(results) > 0:         
         data = {    
-            '{}'.format(primaryKey): '{"operator":">","value": ' + str(maxValue) + '}' ##Method 2. Uncomment everything that's commented and then comment this to swap
+            '{}'.format(primaryKey): '{"operator":">","value": ' + str(maxValue) + '}'
         }     
         headers = {
         'Content-Type': 'application/json',
